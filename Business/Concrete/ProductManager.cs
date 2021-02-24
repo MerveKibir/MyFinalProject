@@ -1,11 +1,16 @@
 ﻿using Business.Abstract;
 using Business.Constants;
+using Business.ValidationRules.FluentValidation;
+using Core.Aspects.Autofac;
+using Core.CrossCuttingConcerns.Validation;
 using Core.Utilities.Result;
 using DataAccess.Abstract;
 using Entities.Concrete;
 using Entities.DTOs;
+using FluentValidation;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace Business.Concrete
@@ -18,31 +23,49 @@ namespace Business.Concrete
         {
             _productDal = productDal;
         }
-
+        [ValidationAspect(typeof(ProductValidator))]
         public IResult Add(Product product)
         {
             //business codes
-            _productDal.Add(product);
-            if(product.ProductName.Length<2)
-            {
-                //Magic strings//tek tek string girişi yapılması (sakıncalı)
-                return new ErrorResult(Messages.ProductNameInvalid);
-            }
-            _productDal.Add(product);
+            //validation - doğrulama - aşağıdaki ifler doğrulama kodları 
+            //Bu kodları ProductValidation içerisine yazdım aslında.
+            //    if(product.UnitPrice<=0)
+            //    {
+            //        return new ErrorResult(Messages.UnitPriceInvalid);
+            //    }
+            //    if(product.ProductName.Length<2)
+            //    {
+            //        //Magic strings//tek tek string girişi yapılması (sakıncalı)
+            //        return new ErrorResult(Messages.ProductNameInvalid);
+            //    }
 
-            return new SuccessResult(Messages.ProductAdded);
+            //Bir kategoride en fazla 10 ürün olabilir.
+
+            if (CheckIfProductCountOfCategoryCorrect(product.CategoryId).Success)
+            {
+                if(CheckIfProductNameExists(product.ProductName).Success)
+                {
+                _productDal.Add(product);
+
+                return new SuccessResult(Messages.ProductAdded);
+                }
+
+            }
+            return new ErrorResult();
         }
+
+
 
         public IDataResult<List<Product>> GetAll()
         {
             //İş Kodları
             //Yetkisi var mı?
-            if(DateTime.Now.Hour==22)
+            if (DateTime.Now.Hour == 22)
             {
-                return new ErrorDataResult<List<Product>> (Messages.MaintenanceTime);
+                return new ErrorDataResult<List<Product>>(Messages.MaintenanceTime);
             }
 
-            return new SuccessDataResult<List<Product>>(_productDal.GetAll(),Messages.ProductsListed);
+            return new SuccessDataResult<List<Product>>(_productDal.GetAll(), Messages.ProductsListed);
         }
 
         public IDataResult<List<Product>> GetAllByCategoryId(int id)
@@ -60,9 +83,31 @@ namespace Business.Concrete
             return new SuccessDataResult<List<Product>>(_productDal.GetAll(p => p.UnitPrice >= min && p.UnitPrice <= max));
         }
 
-        public IDataResult<List<ProductDetailDto>>  GetProductDetails()
+        public IDataResult<List<ProductDetailDto>> GetProductDetails()
         {
+            if (DateTime.Now.Hour == 23)
+            {
+                return new ErrorDataResult<List<ProductDetailDto>>(Messages.MaintenanceTime);
+            }
             return new SuccessDataResult<List<ProductDetailDto>>(_productDal.GetProductDetails());
+        }
+        private IResult CheckIfProductCountOfCategoryCorrect(int categoryId)
+        {
+            var result = _productDal.GetAll(p => p.CategoryId == categoryId).Count;
+            if (result >= 10)
+            {
+                return new ErrorResult(Messages.ProductCountOfCategoryError);
+            }
+            return new SuccessResult();
+        }
+        private IResult CheckIfProductNameExists (string productName)
+        {
+            var result = _productDal.GetAll(p => p.ProductName == productName).Any();//any= var mı?
+            if(result)
+            {
+                return new ErrorResult(Messages.ProductNameAlreadyExists);
+            }
+            return new SuccessResult();
         }
     }
 }
